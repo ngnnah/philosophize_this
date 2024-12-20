@@ -21,33 +21,6 @@ PROCESSED_DATA_DIR = "./data/processed_index"
 OLLAMA_MODEL = "nhat:latest"
 
 
-# import subprocess
-
-
-# def run_ollama_command(command):
-#     try:
-#         full_command = f'echo "{command}" | ollama run {OLLAMA_MODEL}'
-#         result = subprocess.run(
-#             full_command, shell=True, check=True, capture_output=True, text=True
-#         )
-#         return result.stdout
-#     except subprocess.CalledProcessError as e:
-#         print(f"Error running Ollama command: {e}")
-#         print(f"Error output: {e.stderr}")
-#         return None
-
-
-# # def check_ollama_llm():
-# #     result = run_ollama_command("/show system")
-# #     if result:
-# #         print("Ollama LLM check result:")
-# #         print(result)
-# #         return True
-# #     else:
-# #         print("Failed to get a response from Ollama LLM.")
-# #         return False
-
-
 def check_ollama_llm():
     try:
         llm = Ollama(model=OLLAMA_MODEL)
