@@ -1,4 +1,5 @@
 import os
+import numpy as np
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
@@ -27,6 +28,15 @@ def process_transcripts():
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
     Settings.llm = Ollama(model=OLLAMA_MODEL, request_timeout=LLM_TIMEOUT)
+
+    # Debug: Test embedding model
+    test_embedding = Settings.embed_model.get_text_embedding("Test embedding")
+    if test_embedding is None:
+        print("Error: Embedding model failed to generate test embedding")
+    else:
+        print(
+            f"Debug: Test embedding generated successfully. Shape: {np.array(test_embedding).shape}"
+        )
 
     if os.path.exists(PROCESSED_DATA_DIR):
         print(f"Loading existing index from {PROCESSED_DATA_DIR}...")
@@ -59,14 +69,32 @@ def process_transcripts():
     print(
         f"Index {'updated' if os.path.exists(PROCESSED_DATA_DIR) else 'created'} and saved to {PROCESSED_DATA_DIR}"
     )
+
+    print("Debug: Checking if embed_model is set in Settings")
+    if hasattr(Settings, "embed_model"):
+        print(f"Debug: embed_model is set: {type(Settings.embed_model)}")
+    else:
+        print("Error: embed_model is not set in Settings")
+
     return index
 
 
 def query_index(index, query_text):
     query_engine = index.as_query_engine()
 
+    # Debug: Print query text and check embedding
+    print(f"Debug: Query text: {query_text}")
+    query_embedding = Settings.embed_model.get_text_embedding(query_text)
+    if query_embedding is None:
+        print("Error: Failed to generate query embedding")
+        return "Error: Unable to process query", []
+
     # First query for the main answer
-    main_response = query_engine.query(query_text)
+    try:
+        main_response = query_engine.query(query_text)
+    except Exception as e:
+        print(f"Error during main query: {str(e)}")
+        return f"Error: {str(e)}", []
 
     # Second query for TLDR and follow-up questions
     followup_query = f"""Based on the following answer to the question "{query_text}", please provide:
@@ -85,17 +113,23 @@ Suggested Follow-up Questions:
 3. [Third follow-up question]
 """
 
-    followup_response = query_engine.query(followup_query)
+    try:
+        followup_response = query_engine.query(followup_query)
+    except Exception as e:
+        print(f"Error during followup query: {str(e)}")
+        followup_response = None
 
     # Combine the responses
     formatted_response = f"""Detailed Answer:
 {main_response.response}
 
-{followup_response.response}
+{followup_response.response if followup_response else "Error: Unable to generate follow-up information."}
 """
 
     # Combine source nodes from both queries
-    all_source_nodes = main_response.source_nodes + followup_response.source_nodes
+    all_source_nodes = main_response.source_nodes + (
+        followup_response.source_nodes if followup_response else []
+    )
     # Remove duplicates while preserving order
     unique_source_nodes = []
     seen = set()
@@ -107,14 +141,48 @@ Suggested Follow-up Questions:
     return formatted_response, unique_source_nodes
 
 
+def display_index_info(index):
+    print("\n--- Index Information ---")
+    print(f"Vector store type: {type(index.vector_store)}")
+    print(f"Number of documents in the index: {len(index.docstore.docs)}")
+    print(f"Embedding dimension: {index.vector_store.dim}")
+    print(f"Total vectors: {index.vector_store.num_vectors()}")
+    print("---------------------------\n")
+
+
+def display_conversation_embedding(index, conversation):
+    print("\n--- Conversation Embedding ---")
+    conversation_text = " ".join(conversation)
+    embedding = index.embed_model.get_text_embedding(conversation_text)
+    print(f"Embedding dimension: {len(embedding)}")
+    print(f"Embedding preview (first 10 values): {embedding[:10]}")
+    print(f"Embedding statistics:")
+    print(f"  Mean: {np.mean(embedding):.4f}")
+    print(f"  Std Dev: {np.std(embedding):.4f}")
+    print(f"  Min: {np.min(embedding):.4f}")
+    print(f"  Max: {np.max(embedding):.4f}")
+    print("-------------------------------\n")
+
+
 def chat_loop(index):
     print("Welcome to PhiloBot! Type 'exit' to end the conversation.")
+    print("Type 'show index' to display current index information.")
+    print("Type 'show embedding' to display current conversation embedding.")
+    conversation = []
     while True:
         user_input = input("You: ")
         if user_input.lower() == "exit":
             break
+        elif user_input.lower() == "show index":
+            display_index_info(index)
+            continue
+        elif user_input.lower() == "show embedding":
+            display_conversation_embedding(index, conversation)
+            continue
 
+        conversation.append(user_input)
         response, source_nodes = query_index(index, user_input)
+        conversation.append(response)
         print("\nPhiloBot:")
         print(response)
 
