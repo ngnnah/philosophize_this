@@ -52,9 +52,12 @@ def process_transcripts():
 
         if new_docs:
             print(f"Found {len(new_docs)} new documents. Updating index...")
-            documents = SimpleDirectoryReader(
-                RAW_DATA_DIR, filename_as_id=True
-            ).load_data(filename_filter=lambda x: x in new_docs)
+            reader = SimpleDirectoryReader(RAW_DATA_DIR, filename_as_id=True)
+            documents = [
+                doc
+                for doc in reader.load_data()
+                if os.path.basename(doc.metadata["file_name"]) in new_docs
+            ]
             parser = SimpleNodeParser.from_defaults()
             nodes = parser.get_nodes_from_documents(documents)
             index.insert_nodes(nodes)
